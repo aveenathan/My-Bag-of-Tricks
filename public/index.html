@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tidy Tube — kid-safe, AI-slop-filtered YouTube player</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">🧹📺</span>
+      <span class="brand-name">Tidy Tube</span>
+    </div>
+    <form id="search-form" class="search-form" autocomplete="off">
+      <input
+        id="search-input"
+        type="search"
+        name="q"
+        placeholder="Search kid-friendly videos…"
+        aria-label="Search videos"
+        required
+      />
+      <button type="submit">Search</button>
+    </form>
+    <button id="open-parent-gate" class="parent-button" type="button">
+      👪 Parent Zone
+    </button>
+  </header>
+
+  <main>
+    <section id="player-section" class="player-section" hidden>
+      <div class="player-wrap">
+        <div id="player"></div>
+      </div>
+      <div class="player-meta">
+        <h2 id="player-title"></h2>
+        <p id="player-channel"></p>
+      </div>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="results" class="results" aria-live="polite"></section>
+  </main>
+
+  <!-- Parent gate: a simple arithmetic check so a kid can't casually poke into filter settings. -->
+  <div id="parent-gate" class="modal" hidden>
+    <div class="modal-card">
+      <h3>Parent Zone</h3>
+      <p id="gate-question">Solve to continue: </p>
+      <input id="gate-answer" type="number" inputmode="numeric" placeholder="Answer" />
+      <div class="modal-actions">
+        <button id="gate-cancel" type="button" class="secondary">Cancel</button>
+        <button id="gate-submit" type="button">Continue</button>
+      </div>
+      <p id="gate-error" class="error" hidden>Not quite — try again.</p>
+    </div>
+  </div>
+
+  <!-- Parent panel: review borderline/blocked videos, manage lists, tune threshold. -->
+  <div id="parent-panel" class="modal" hidden>
+    <div class="modal-card wide">
+      <div class="modal-header">
+        <h3>Parent Zone</h3>
+        <button id="close-parent-panel" class="secondary" type="button">Close</button>
+      </div>
+
+      <section class="settings-block">
+        <h4>AI-slop sensitivity</h4>
+        <p class="hint">
+          Lower = stricter filtering (more videos hidden). Higher = more permissive.
+        </p>
+        <div class="threshold-row">
+          <input id="threshold-slider" type="range" min="1" max="10" step="1" />
+          <span id="threshold-value"></span>
+        </div>
+      </section>
+
+      <section class="settings-block">
+        <h4>Trusted channels (always shown)</h4>
+        <ul id="allowlist" class="chip-list"></ul>
+      </section>
+
+      <section class="settings-block">
+        <h4>Blocked channels (always hidden)</h4>
+        <ul id="blocklist" class="chip-list"></ul>
+      </section>
+
+      <section class="settings-block">
+        <h4>Borderline / hidden results from the last search</h4>
+        <p class="hint">These were flagged by the heuristic filter. Review why, and allow or block the channel.</p>
+        <div id="review-list" class="review-list"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
