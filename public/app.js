@@ -86,8 +86,12 @@ async function runSearch(query) {
     renderReviewQueue(data);
 
     const hiddenCount = data.counts.borderline + data.counts.blocked;
+    const demoPrefix = data.demoMode
+      ? '🧪 Demo mode (no YOUTUBE_API_KEY set, showing sample data) — '
+      : '';
     setStatus(
-      `Showing ${data.counts.allowed} kid-safe video${data.counts.allowed === 1 ? '' : 's'}` +
+      demoPrefix +
+        `Showing ${data.counts.allowed} kid-safe video${data.counts.allowed === 1 ? '' : 's'}` +
         (hiddenCount ? ` — ${hiddenCount} filtered out as likely AI slop (see Parent Zone).` : '.')
     );
   } catch (err) {

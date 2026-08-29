@@ -8,6 +8,7 @@ const { URL } = require('url');
 const { searchVideos } = require('./src/youtubeClient');
 const { filterVideos } = require('./src/aiSlopFilter');
 const { readLists, writeLists, moveChannel } = require('./src/listsStore');
+const { SAMPLE_VIDEOS } = require('./src/sampleVideos');
 
 const PORT = process.env.PORT || 3000;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
@@ -60,13 +61,32 @@ async function handleSearch(req, res, query) {
   }
 
   try {
-    const cached = searchCache.get(q);
     let videos;
-    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-      videos = cached.data;
+    let demoMode = false;
+
+    if (!YOUTUBE_API_KEY) {
+      // No API key configured — fall back to canned sample data so the app
+      // (search → filter → play) can still be tried out end-to-end.
+      demoMode = true;
+      const needle = q.toLowerCase();
+      const matched = SAMPLE_VIDEOS.filter(
+        (v) =>
+          v.title.toLowerCase().includes(needle) ||
+          v.description.toLowerCase().includes(needle) ||
+          v.channelTitle.toLowerCase().includes(needle)
+      );
+      videos = (matched.length > 0 ? matched : SAMPLE_VIDEOS).map((v) => ({
+        ...v,
+        thumbnail: `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`,
+      }));
     } else {
-      videos = await searchVideos(q, { apiKey: YOUTUBE_API_KEY, maxResults: 25 });
-      searchCache.set(q, { at: Date.now(), data: videos });
+      const cached = searchCache.get(q);
+      if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+        videos = cached.data;
+      } else {
+        videos = await searchVideos(q, { apiKey: YOUTUBE_API_KEY, maxResults: 25 });
+        searchCache.set(q, { at: Date.now(), data: videos });
+      }
     }
 
     const lists = readLists();
@@ -74,6 +94,7 @@ async function handleSearch(req, res, query) {
 
     sendJson(res, 200, {
       query: q,
+      demoMode,
       threshold: lists.threshold,
       counts: { allowed: allowed.length, borderline: borderline.length, blocked: blocked.length },
       allowed,
@@ -162,7 +183,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   if (!YOUTUBE_API_KEY) {
     console.warn(
-      'Warning: YOUTUBE_API_KEY is not set. Searches will fail until you set it (see .env.example).'
+      'YOUTUBE_API_KEY is not set — running in DEMO MODE with sample data. See .env.example to search real YouTube.'
     );
   }
   console.log(`AI-slop-filtered YouTube player running at http://localhost:${PORT}`);
