@@ -48,22 +48,3 @@ test('listTasksForToday only returns active tasks due today or earlier', () => {
   const due = store.listTasksForToday('2026-08-30');
   assert.deepEqual(due.map((t) => t.id), [todayTask.id]);
 });
-
-test('createNote + listNotes round-trip, updateNote bumps updatedAt, deleteNote removes it', async () => {
-  const created = store.createNote({ title: 'Idea', body: 'Build a thing' });
-  assert.equal(created.title, 'Idea');
-
-  assert.deepEqual(store.listNotes().map((n) => n.id), [created.id]);
-  assert.deepEqual(store.listNotes('idea').map((n) => n.id), [created.id]);
-  assert.deepEqual(store.listNotes('nope'), []);
-
-  await new Promise((r) => setTimeout(r, 5));
-  const updated = store.updateNote(created.id, { body: 'Build a better thing' });
-  assert.equal(updated.body, 'Build a better thing');
-  assert.notEqual(updated.updatedAt, created.updatedAt);
-  assert.equal(store.updateNote('missing-id', { body: 'x' }), null);
-
-  assert.equal(store.deleteNote(created.id), true);
-  assert.equal(store.deleteNote(created.id), false);
-  assert.deepEqual(store.listNotes(), []);
-});

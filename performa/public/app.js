@@ -2,9 +2,16 @@
 
 const state = {
   tasks: [],
-  notes: [],
   taskFilter: 'all',
-  editingNoteId: null, // null while creating a new note
+
+  topics: [], // [{slug, title, tags, updated, openTasks, totalTasks}]
+  currentTopicSlug: null,
+
+  capture: {
+    suggestions: [], // [{slug, title, score}]
+    selectedSlugs: new Set(),
+    newTitles: [],
+  },
 };
 
 const els = {
@@ -18,16 +25,30 @@ const els = {
 
   tasksList: document.getElementById('tasks-list'),
 
-  notesSearch: document.getElementById('notes-search'),
-  newNoteBtn: document.getElementById('new-note'),
-  notesList: document.getElementById('notes-list'),
+  captureText: document.getElementById('capture-text'),
+  suggestHint: document.getElementById('suggest-hint'),
+  suggestedTopics: document.getElementById('suggested-topics'),
+  topicPickerInput: document.getElementById('topic-picker-input'),
+  allTopicsDatalist: document.getElementById('all-topics'),
+  addTopicChip: document.getElementById('add-topic-chip'),
+  selectedChips: document.getElementById('selected-chips'),
+  captureSubmit: document.getElementById('capture-submit'),
 
-  noteModal: document.getElementById('note-modal'),
-  noteModalTitle: document.getElementById('note-modal-title'),
-  noteTitleInput: document.getElementById('note-title-input'),
-  noteBodyInput: document.getElementById('note-body-input'),
-  noteCancel: document.getElementById('note-cancel'),
-  noteSave: document.getElementById('note-save'),
+  topicsListPanel: document.getElementById('topics-list-panel'),
+  topicsList: document.getElementById('topics-list'),
+  capturePanel: document.getElementById('capture-panel'),
+
+  topicDetailPanel: document.getElementById('topic-detail-panel'),
+  topicDetailTitle: document.getElementById('topic-detail-title'),
+  topicTags: document.getElementById('topic-tags'),
+  topicRendered: document.getElementById('topic-rendered'),
+  backToTopics: document.getElementById('back-to-topics'),
+  toggleRaw: document.getElementById('toggle-raw'),
+  deleteTopic: document.getElementById('delete-topic'),
+  topicRawEditor: document.getElementById('topic-raw-editor'),
+  rawTextarea: document.getElementById('raw-textarea'),
+  rawCancel: document.getElementById('raw-cancel'),
+  rawSave: document.getElementById('raw-save'),
 };
 
 function showStatus(message, kind) {
@@ -65,7 +86,7 @@ document.querySelectorAll('.tab-button').forEach((btn) => {
   });
 });
 
-// ---------- Tasks ----------
+// ---------- Tasks (Today + Tasks tabs) ----------
 
 function priorityBadge(priority) {
   return `<span class="badge priority-${priority}">${priority}</span>`;
@@ -203,83 +224,310 @@ document.querySelectorAll('.filter-button').forEach((btn) => {
   });
 });
 
-// ---------- Notes ----------
+// ---------- Topics: vault list + detail ----------
 
-function noteCard(note) {
+function topicCard(topic) {
   const card = document.createElement('div');
-  card.className = 'note-card';
-  const preview = note.body.length > 140 ? note.body.slice(0, 140) + '…' : note.body;
+  card.className = 'topic-card';
   card.innerHTML = `
-    <h3>${escapeHtml(note.title)}</h3>
-    <p class="note-preview">${escapeHtml(preview)}</p>
-    <div class="note-footer">
-      <span class="hint">${note.updatedAt.slice(0, 10)}</span>
-      <div class="note-actions">
-        <button class="icon-button edit-note" type="button" title="Edit">✎</button>
-        <button class="icon-button delete-note" type="button" title="Delete">✕</button>
-      </div>
-    </div>
+    <h3>${escapeHtml(topic.title)}</h3>
+    <div class="chip-row">${topic.tags.map((t) => `<span class="chip">${escapeHtml(t)}</span>`).join('')}</div>
+    <p class="hint">
+      ${topic.totalTasks ? `${topic.openTasks}/${topic.totalTasks} tasks open · ` : ''}updated ${topic.updated}
+    </p>
   `;
-  card.querySelector('.edit-note').addEventListener('click', () => openNoteModal(note));
-  card.querySelector('.delete-note').addEventListener('click', async () => {
-    try {
-      await api(`/api/notes/${note.id}`, { method: 'DELETE' });
-      await refreshNotes();
-    } catch (err) {
-      showStatus(err.message, 'error');
-    }
-  });
+  card.addEventListener('click', () => openTopicDetail(topic.slug));
   return card;
 }
 
-async function refreshNotes() {
+async function refreshTopicsList() {
   try {
-    const { notes } = await api(`/api/notes?q=${encodeURIComponent(els.notesSearch.value.trim())}`);
-    state.notes = notes;
-    els.notesList.innerHTML = '';
-    if (notes.length === 0) {
-      els.notesList.innerHTML = '<p class="hint empty">No notes yet — add one!</p>';
-      return;
-    }
-    for (const note of notes) els.notesList.appendChild(noteCard(note));
+    const { topics } = await api('/api/topics');
+    state.topics = topics;
+    renderTopicsGrid();
+    renderTopicsDatalist();
   } catch (err) {
     showStatus(err.message, 'error');
   }
 }
 
-let searchDebounce;
-els.notesSearch.addEventListener('input', () => {
-  clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(refreshNotes, 200);
-});
-
-function openNoteModal(note) {
-  state.editingNoteId = note ? note.id : null;
-  els.noteModalTitle.textContent = note ? 'Edit note' : 'New note';
-  els.noteTitleInput.value = note ? note.title : '';
-  els.noteBodyInput.value = note ? note.body : '';
-  els.noteModal.hidden = false;
-  els.noteTitleInput.focus();
+function renderTopicsGrid() {
+  els.topicsList.innerHTML = '';
+  if (state.topics.length === 0) {
+    els.topicsList.innerHTML = '<p class="hint empty">No topics yet — capture a thought above to start one.</p>';
+    return;
+  }
+  for (const topic of state.topics) els.topicsList.appendChild(topicCard(topic));
 }
 
-els.newNoteBtn.addEventListener('click', () => openNoteModal(null));
-els.noteCancel.addEventListener('click', () => {
-  els.noteModal.hidden = true;
+function renderTopicsDatalist() {
+  els.allTopicsDatalist.innerHTML = state.topics
+    .map((t) => `<option value="${escapeHtml(t.title)}"></option>`)
+    .join('');
+}
+
+function findTopicByTitle(title) {
+  const needle = title.trim().toLowerCase();
+  return state.topics.find((t) => t.title.toLowerCase() === needle);
+}
+
+// ---------- Capture form: suggestions + topic selection ----------
+
+function renderSuggestions() {
+  const { suggestions, selectedSlugs } = state.capture;
+  els.suggestHint.hidden = suggestions.length > 0;
+  els.suggestedTopics.innerHTML = suggestions
+    .map(
+      (s) => `
+      <label class="topic-check">
+        <input type="checkbox" data-slug="${escapeHtml(s.slug)}" ${selectedSlugs.has(s.slug) ? 'checked' : ''} />
+        ${escapeHtml(s.title)}
+      </label>`
+    )
+    .join('');
+
+  els.suggestedTopics.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.capture.selectedSlugs.add(cb.dataset.slug);
+      else state.capture.selectedSlugs.delete(cb.dataset.slug);
+      renderChips();
+    });
+  });
+}
+
+function renderChips() {
+  const chips = [];
+  for (const slug of state.capture.selectedSlugs) {
+    const topic = state.topics.find((t) => t.slug === slug);
+    chips.push({ kind: 'existing', key: slug, label: topic ? topic.title : slug });
+  }
+  for (const title of state.capture.newTitles) {
+    chips.push({ kind: 'new', key: title, label: `+ New: ${title}` });
+  }
+
+  els.selectedChips.innerHTML = chips
+    .map(
+      (c) => `<span class="chip removable ${c.kind}">${escapeHtml(c.label)} <button type="button" data-kind="${c.kind}" data-key="${escapeHtml(c.key)}">×</button></span>`
+    )
+    .join('');
+
+  els.selectedChips.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.kind === 'existing') {
+        state.capture.selectedSlugs.delete(btn.dataset.key);
+        renderSuggestions();
+      } else {
+        state.capture.newTitles = state.capture.newTitles.filter((t) => t !== btn.dataset.key);
+      }
+      renderChips();
+    });
+  });
+}
+
+let suggestDebounce;
+els.captureText.addEventListener('input', () => {
+  clearTimeout(suggestDebounce);
+  const text = els.captureText.value.trim();
+  if (!text) {
+    state.capture.suggestions = [];
+    renderSuggestions();
+    return;
+  }
+  suggestDebounce = setTimeout(async () => {
+    try {
+      const { suggestions } = await api(`/api/topics/suggest?text=${encodeURIComponent(text)}`);
+      state.capture.suggestions = suggestions;
+      renderSuggestions();
+    } catch (err) {
+      // Suggestions are a nicety — a failed lookup shouldn't block capturing.
+    }
+  }, 250);
 });
 
-els.noteSave.addEventListener('click', async () => {
-  const title = els.noteTitleInput.value.trim();
-  const body = els.noteBodyInput.value;
-  if (!title) return showStatus('Note title is required.', 'error');
+els.addTopicChip.addEventListener('click', () => {
+  const value = els.topicPickerInput.value.trim();
+  if (!value) return;
+  const existing = findTopicByTitle(value);
+  if (existing) {
+    state.capture.selectedSlugs.add(existing.slug);
+    renderSuggestions();
+  } else if (!state.capture.newTitles.some((t) => t.toLowerCase() === value.toLowerCase())) {
+    state.capture.newTitles.push(value);
+  }
+  els.topicPickerInput.value = '';
+  renderChips();
+});
+
+els.topicPickerInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    els.addTopicChip.click();
+  }
+});
+
+function resetCaptureForm() {
+  els.captureText.value = '';
+  els.topicPickerInput.value = '';
+  document.querySelector('input[name="capture-type"][value="idea"]').checked = true;
+  state.capture = { suggestions: [], selectedSlugs: new Set(), newTitles: [] };
+  renderSuggestions();
+  renderChips();
+}
+
+els.captureSubmit.addEventListener('click', async () => {
+  const text = els.captureText.value.trim();
+  const type = document.querySelector('input[name="capture-type"]:checked').value;
+  const topicSlugs = [...state.capture.selectedSlugs];
+  const newTopicTitles = [...state.capture.newTitles];
+
+  if (!text) return showStatus('Write something to capture first.', 'error');
+  if (topicSlugs.length === 0 && newTopicTitles.length === 0) {
+    return showStatus('Pick or create at least one topic to file this under.', 'error');
+  }
 
   try {
-    if (state.editingNoteId) {
-      await api(`/api/notes/${state.editingNoteId}`, { method: 'PATCH', body: JSON.stringify({ title, body }) });
-    } else {
-      await api('/api/notes', { method: 'POST', body: JSON.stringify({ title, body }) });
+    await api('/api/captures', { method: 'POST', body: JSON.stringify({ text, type, topicSlugs, newTopicTitles }) });
+    const filedCount = topicSlugs.length + newTopicTitles.length;
+    resetCaptureForm();
+    await refreshTopicsList();
+    if (state.currentTopicSlug) await openTopicDetail(state.currentTopicSlug);
+    showStatus(`Filed under ${filedCount} topic${filedCount === 1 ? '' : 's'}.`, 'success');
+  } catch (err) {
+    showStatus(err.message, 'error');
+  }
+});
+
+// ---------- Topic detail: rendered markdown + raw editor ----------
+
+function renderMarkdown(body) {
+  const lines = body.split(/\r?\n/);
+  let html = '';
+  let inList = false;
+  let checkboxIndex = 0;
+
+  const inline = (text) => escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const closeList = () => {
+    if (inList) {
+      html += '</ul>';
+      inList = false;
     }
-    els.noteModal.hidden = true;
-    await refreshNotes();
+  };
+  const openList = () => {
+    if (!inList) {
+      html += '<ul class="md-list">';
+      inList = true;
+    }
+  };
+
+  for (const line of lines) {
+    const h1 = /^#\s+(.+)$/.exec(line);
+    const h2 = /^##\s+(.+)$/.exec(line);
+    const checkbox = /^-\s*\[( |x|X)\]\s*(.*)$/.exec(line);
+    const bullet = /^-\s+(.*)$/.exec(line);
+
+    if (h1) {
+      closeList();
+      html += `<h1>${inline(h1[1])}</h1>`;
+    } else if (h2) {
+      closeList();
+      html += `<h2>${inline(h2[1])}</h2>`;
+    } else if (checkbox) {
+      openList();
+      const idx = checkboxIndex++;
+      const checked = checkbox[1].toLowerCase() === 'x';
+      html += `<li class="md-task"><label><input type="checkbox" data-task-index="${idx}" ${checked ? 'checked' : ''}/> <span class="${checked ? 'done' : ''}">${inline(checkbox[2])}</span></label></li>`;
+    } else if (bullet) {
+      openList();
+      html += `<li>${inline(bullet[1])}</li>`;
+    } else if (line.trim() === '') {
+      closeList();
+    } else {
+      closeList();
+      html += `<p>${inline(line)}</p>`;
+    }
+  }
+  closeList();
+  return html || '<p class="hint">Nothing here yet.</p>';
+}
+
+async function openTopicDetail(slug) {
+  try {
+    const topic = await api(`/api/topics/${encodeURIComponent(slug)}`);
+    state.currentTopicSlug = slug;
+    els.topicDetailTitle.textContent = topic.title;
+    els.topicTags.innerHTML = topic.tags.map((t) => `<span class="chip">${escapeHtml(t)}</span>`).join('');
+    els.topicRendered.innerHTML = renderMarkdown(topic.body);
+    els.rawTextarea.value = topic.raw;
+    els.topicRawEditor.hidden = true;
+    els.topicRendered.hidden = false;
+    els.toggleRaw.textContent = 'View raw';
+
+    els.topicsListPanel.hidden = true;
+    els.capturePanel.hidden = true;
+    els.topicDetailPanel.hidden = false;
+  } catch (err) {
+    showStatus(err.message, 'error');
+  }
+}
+
+function closeTopicDetail() {
+  state.currentTopicSlug = null;
+  els.topicDetailPanel.hidden = true;
+  els.topicsListPanel.hidden = false;
+  els.capturePanel.hidden = false;
+}
+
+els.backToTopics.addEventListener('click', closeTopicDetail);
+
+els.topicRendered.addEventListener('change', async (e) => {
+  const input = e.target.closest('input[data-task-index]');
+  if (!input || !state.currentTopicSlug) return;
+  try {
+    await api(`/api/topics/${encodeURIComponent(state.currentTopicSlug)}/tasks/${input.dataset.taskIndex}`, {
+      method: 'PATCH',
+    });
+    await openTopicDetail(state.currentTopicSlug);
+    await refreshTopicsList();
+  } catch (err) {
+    showStatus(err.message, 'error');
+  }
+});
+
+els.toggleRaw.addEventListener('click', () => {
+  const showingRaw = !els.topicRawEditor.hidden;
+  els.topicRawEditor.hidden = showingRaw;
+  els.topicRendered.hidden = !showingRaw;
+  els.toggleRaw.textContent = showingRaw ? 'View raw' : 'View rendered';
+});
+
+els.rawCancel.addEventListener('click', () => {
+  els.topicRawEditor.hidden = true;
+  els.topicRendered.hidden = false;
+  els.toggleRaw.textContent = 'View raw';
+});
+
+els.rawSave.addEventListener('click', async () => {
+  if (!state.currentTopicSlug) return;
+  try {
+    await api(`/api/topics/${encodeURIComponent(state.currentTopicSlug)}/raw`, {
+      method: 'PUT',
+      body: JSON.stringify({ content: els.rawTextarea.value }),
+    });
+    await openTopicDetail(state.currentTopicSlug);
+    await refreshTopicsList();
+    showStatus('Saved.', 'success');
+  } catch (err) {
+    showStatus(err.message, 'error');
+  }
+});
+
+els.deleteTopic.addEventListener('click', async () => {
+  if (!state.currentTopicSlug) return;
+  if (!confirm('Delete this topic file? This cannot be undone.')) return;
+  try {
+    await api(`/api/topics/${encodeURIComponent(state.currentTopicSlug)}`, { method: 'DELETE' });
+    closeTopicDetail();
+    await refreshTopicsList();
   } catch (err) {
     showStatus(err.message, 'error');
   }
@@ -288,4 +536,6 @@ els.noteSave.addEventListener('click', async () => {
 // ---------- Init ----------
 
 refreshTasks();
-refreshNotes();
+refreshTopicsList();
+renderSuggestions();
+renderChips();

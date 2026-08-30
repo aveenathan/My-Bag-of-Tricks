@@ -15,7 +15,7 @@
     <nav class="tabs">
       <button class="tab-button active" data-tab="today" type="button">Today</button>
       <button class="tab-button" data-tab="tasks" type="button">Tasks</button>
-      <button class="tab-button" data-tab="notes" type="button">Notes</button>
+      <button class="tab-button" data-tab="topics" type="button">Topics</button>
     </nav>
   </header>
 
@@ -57,30 +57,63 @@
       </div>
     </section>
 
-    <!-- Notes -->
-    <section id="tab-notes" class="tab-panel" hidden>
-      <div class="panel">
-        <div class="notes-toolbar">
-          <input id="notes-search" type="search" placeholder="Search notes…" />
-          <button id="new-note" type="button">➕ New note</button>
+    <!-- Topics: a vault of real .md files — ideas, examples and topic-linked
+         tasks all aggregate into the same file per subject, so it can be
+         pointed at (or copied into) an Obsidian vault or pasted into Confluence. -->
+    <section id="tab-topics" class="tab-panel" hidden>
+      <div class="panel" id="capture-panel">
+        <h2>Capture a thought</h2>
+        <p class="hint">Not everything is a task — pick what this actually is.</p>
+        <textarea id="capture-text" placeholder="An idea, an example you just ran into, or something to do…" rows="3" maxlength="2000"></textarea>
+
+        <div class="type-picker">
+          <label><input type="radio" name="capture-type" value="idea" checked /> Idea</label>
+          <label><input type="radio" name="capture-type" value="example" /> Example</label>
+          <label><input type="radio" name="capture-type" value="task" /> Task</label>
         </div>
-        <div id="notes-list" class="notes-grid"></div>
+
+        <div class="file-under">
+          <h4>File under</h4>
+          <p class="hint" id="suggest-hint">Start typing above to see suggested topics.</p>
+          <div id="suggested-topics" class="topic-checks"></div>
+          <div class="add-topic-row">
+            <input id="topic-picker-input" type="text" list="all-topics" placeholder="Add an existing or new topic…" maxlength="100" />
+            <datalist id="all-topics"></datalist>
+            <button id="add-topic-chip" type="button" class="secondary">Add</button>
+          </div>
+          <div id="selected-chips" class="chip-row"></div>
+        </div>
+
+        <button id="capture-submit" type="button">Capture</button>
+      </div>
+
+      <div class="panel" id="topics-list-panel">
+        <h2>Your topics</h2>
+        <div id="topics-list" class="topics-grid"></div>
+      </div>
+
+      <div class="panel" id="topic-detail-panel" hidden>
+        <div class="topic-detail-header">
+          <button id="back-to-topics" type="button" class="secondary">← Back</button>
+          <h2 id="topic-detail-title"></h2>
+          <div class="topic-detail-actions">
+            <button id="toggle-raw" type="button" class="secondary">View raw</button>
+            <button id="delete-topic" type="button" class="secondary danger">Delete</button>
+          </div>
+        </div>
+        <div id="topic-tags" class="chip-row"></div>
+        <div id="topic-rendered" class="md-render"></div>
+        <div id="topic-raw-editor" hidden>
+          <textarea id="raw-textarea" rows="16"></textarea>
+          <p class="hint">This is the exact file on disk, frontmatter included — safe to hand-edit.</p>
+          <div class="modal-actions">
+            <button id="raw-cancel" type="button" class="secondary">Cancel</button>
+            <button id="raw-save" type="button">Save</button>
+          </div>
+        </div>
       </div>
     </section>
   </main>
-
-  <!-- Note editor modal -->
-  <div id="note-modal" class="modal" hidden>
-    <div class="modal-card">
-      <h3 id="note-modal-title">New note</h3>
-      <input id="note-title-input" type="text" placeholder="Title" maxlength="200" />
-      <textarea id="note-body-input" placeholder="Write something…" rows="8"></textarea>
-      <div class="modal-actions">
-        <button id="note-cancel" type="button" class="secondary">Cancel</button>
-        <button id="note-save" type="button">Save</button>
-      </div>
-    </div>
-  </div>
 
   <script src="/app.js"></script>
 </body>

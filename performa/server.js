@@ -6,13 +6,18 @@ const path = require('path');
 const { URL } = require('url');
 
 const store = require('./src/store');
+const vaultStore = require('./src/vaultStore');
+const { suggestTopics } = require('./src/matching');
+const { listCheckboxes } = require('./src/taskCheckboxes');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_BODY_BYTES = 200 * 1024; // plenty for a title + a long note body
 
 const TASK_ID_RE = /^\/api\/tasks\/([^/]+)$/;
-const NOTE_ID_RE = /^\/api\/notes\/([^/]+)$/;
+const TOPIC_SLUG_RE = /^\/api\/topics\/([^/]+)$/;
+const TOPIC_TASK_RE = /^\/api\/topics\/([^/]+)\/tasks\/(\d+)$/;
+const TOPIC_RAW_RE = /^\/api\/topics\/([^/]+)\/raw$/;
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -61,7 +66,7 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ---------- Task routes ----------
+// ---------- Quick task routes (day-to-day todos, JSON-backed) ----------
 
 async function handleListTasks(req, res) {
   sendJson(res, 200, { tasks: store.listTasks() });
@@ -98,37 +103,92 @@ async function handleDeleteTask(req, res, id) {
   sendJson(res, 200, { deleted: id });
 }
 
-// ---------- Note routes ----------
+// ---------- Vault routes (topics: ideas/examples/tasks as markdown files) ----------
 
-async function handleListNotes(req, res, searchParams) {
-  sendJson(res, 200, { notes: store.listNotes(searchParams.get('q') || '') });
+function topicSummary(topic) {
+  const checks = listCheckboxes(topic.content);
+  return {
+    slug: topic.slug,
+    title: topic.title,
+    tags: topic.tags,
+    created: topic.created,
+    updated: topic.updated,
+    openTasks: checks.filter((c) => !c.completed).length,
+    totalTasks: checks.length,
+  };
 }
 
-async function handleCreateNote(req, res) {
+async function handleListTopics(req, res) {
+  sendJson(res, 200, { topics: vaultStore.listTopics().map(topicSummary) });
+}
+
+async function handleSuggestTopics(req, res, searchParams) {
+  const text = searchParams.get('text') || '';
+  sendJson(res, 200, { suggestions: suggestTopics(text, vaultStore.listTopics()) });
+}
+
+async function handleCreateTopic(req, res) {
   try {
     const body = await readJsonBody(req);
-    const note = store.createNote(body);
-    sendJson(res, 201, note);
+    const topic = vaultStore.createTopic(body);
+    sendJson(res, 201, topic);
   } catch (err) {
     sendJson(res, 400, { error: err.message });
   }
 }
 
-async function handleUpdateNote(req, res, id) {
+async function handleGetTopic(req, res, slug) {
+  const topic = vaultStore.readTopic(slug);
+  if (!topic) return sendJson(res, 404, { error: 'Topic not found.' });
+  sendJson(res, 200, topic);
+}
+
+async function handleDeleteTopic(req, res, slug) {
+  const ok = vaultStore.deleteTopic(slug);
+  if (!ok) return sendJson(res, 404, { error: 'Topic not found.' });
+  sendJson(res, 200, { deleted: slug });
+}
+
+async function handleToggleTask(req, res, slug, index) {
   try {
-    const body = await readJsonBody(req);
-    const note = store.updateNote(id, body);
-    if (!note) return sendJson(res, 404, { error: 'Note not found.' });
-    sendJson(res, 200, note);
+    const topic = vaultStore.toggleTask(slug, Number(index));
+    sendJson(res, 200, topic);
   } catch (err) {
-    sendJson(res, 400, { error: err.message });
+    sendJson(res, err.message === 'Topic not found.' ? 404 : 400, { error: err.message });
   }
 }
 
-async function handleDeleteNote(req, res, id) {
-  const ok = store.deleteNote(id);
-  if (!ok) return sendJson(res, 404, { error: 'Note not found.' });
-  sendJson(res, 200, { deleted: id });
+async function handleWriteRaw(req, res, slug) {
+  try {
+    const body = await readJsonBody(req);
+    const topic = vaultStore.writeRaw(slug, body.content || '');
+    sendJson(res, 200, topic);
+  } catch (err) {
+    sendJson(res, err.message === 'Topic not found.' ? 404 : 400, { error: err.message });
+  }
+}
+
+// Capture one thought (idea/example/task) into one or more topic files at
+// once — an existing topic by slug, and/or brand-new topics created on the fly.
+async function handleCapture(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const { text, type, topicSlugs = [], newTopicTitles = [] } = body;
+
+    const slugs = new Set(topicSlugs);
+    for (const title of newTopicTitles) {
+      const topic = vaultStore.resolveTopic(title, { createIfMissing: true });
+      slugs.add(topic.slug);
+    }
+    if (slugs.size === 0) {
+      return sendJson(res, 400, { error: 'At least one topic (existing or new) is required.' });
+    }
+
+    const results = [...slugs].map((slug) => vaultStore.appendEntry(slug, { type, text }));
+    sendJson(res, 201, { topics: results });
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
 }
 
 // ---------- Static files ----------
@@ -179,18 +239,32 @@ const server = http.createServer(async (req, res) => {
     return handleDeleteTask(req, res, decodeURIComponent(taskMatch[1]));
   }
 
-  if (pathname === '/api/notes' && req.method === 'GET') {
-    return handleListNotes(req, res, searchParams);
+  if (pathname === '/api/topics/suggest' && req.method === 'GET') {
+    return handleSuggestTopics(req, res, searchParams);
   }
-  if (pathname === '/api/notes' && req.method === 'POST') {
-    return handleCreateNote(req, res);
+  if (pathname === '/api/topics' && req.method === 'GET') {
+    return handleListTopics(req, res);
   }
-  const noteMatch = NOTE_ID_RE.exec(pathname);
-  if (noteMatch && req.method === 'PATCH') {
-    return handleUpdateNote(req, res, decodeURIComponent(noteMatch[1]));
+  if (pathname === '/api/topics' && req.method === 'POST') {
+    return handleCreateTopic(req, res);
   }
-  if (noteMatch && req.method === 'DELETE') {
-    return handleDeleteNote(req, res, decodeURIComponent(noteMatch[1]));
+  if (pathname === '/api/captures' && req.method === 'POST') {
+    return handleCapture(req, res);
+  }
+  const topicTaskMatch = TOPIC_TASK_RE.exec(pathname);
+  if (topicTaskMatch && req.method === 'PATCH') {
+    return handleToggleTask(req, res, decodeURIComponent(topicTaskMatch[1]), topicTaskMatch[2]);
+  }
+  const topicRawMatch = TOPIC_RAW_RE.exec(pathname);
+  if (topicRawMatch && req.method === 'PUT') {
+    return handleWriteRaw(req, res, decodeURIComponent(topicRawMatch[1]));
+  }
+  const topicMatch = TOPIC_SLUG_RE.exec(pathname);
+  if (topicMatch && req.method === 'GET') {
+    return handleGetTopic(req, res, decodeURIComponent(topicMatch[1]));
+  }
+  if (topicMatch && req.method === 'DELETE') {
+    return handleDeleteTopic(req, res, decodeURIComponent(topicMatch[1]));
   }
 
   return serveStatic(req, res, pathname);

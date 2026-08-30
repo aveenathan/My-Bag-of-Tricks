@@ -5,20 +5,16 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { sanitizeTaskFields, sortTasks, tasksForToday } = require('./taskLogic');
-const { sanitizeNoteFields, searchNotes, sortNotesByRecency } = require('./noteLogic');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_PATH = path.join(DATA_DIR, 'store.json');
-const DEFAULT_DATA = { tasks: [], notes: [] };
+const DEFAULT_DATA = { tasks: [] };
 
 function readData() {
   try {
     const raw = fs.readFileSync(DATA_PATH, 'utf8');
     const parsed = JSON.parse(raw);
-    return {
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-    };
+    return { tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [] };
   } catch (err) {
     if (err.code === 'ENOENT') return { ...DEFAULT_DATA };
     throw err;
@@ -34,7 +30,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// ---------- Tasks ----------
+// ---------- Tasks (quick, day-to-day todos — see src/vaultStore.js for
+// topic-linked ideas/examples/tasks that live in markdown files instead) ----------
 
 function listTasks() {
   return sortTasks(readData().tasks);
@@ -79,47 +76,6 @@ function deleteTask(id) {
   return true;
 }
 
-// ---------- Notes ----------
-
-function listNotes(query) {
-  return sortNotesByRecency(searchNotes(readData().notes, query));
-}
-
-function createNote(fields) {
-  const clean = sanitizeNoteFields(fields, { requireTitle: true });
-  const timestamp = nowIso();
-  const note = {
-    id: crypto.randomUUID(),
-    title: clean.title,
-    body: clean.body,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  const data = readData();
-  data.notes.push(note);
-  writeData(data);
-  return note;
-}
-
-function updateNote(id, fields) {
-  const clean = sanitizeNoteFields(fields, { requireTitle: false });
-  const data = readData();
-  const note = data.notes.find((n) => n.id === id);
-  if (!note) return null;
-  Object.assign(note, clean, { updatedAt: nowIso() });
-  writeData(data);
-  return note;
-}
-
-function deleteNote(id) {
-  const data = readData();
-  const before = data.notes.length;
-  data.notes = data.notes.filter((n) => n.id !== id);
-  if (data.notes.length === before) return false;
-  writeData(data);
-  return true;
-}
-
 module.exports = {
   DATA_PATH,
   listTasks,
@@ -127,8 +83,4 @@ module.exports = {
   createTask,
   updateTask,
   deleteTask,
-  listNotes,
-  createNote,
-  updateNote,
-  deleteNote,
 };
