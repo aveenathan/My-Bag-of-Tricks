@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.log
+
+# Your tasks and topic vault — local runtime data, not something this code
+# repo tracks. Point Obsidian/Confluence at vault/ yourself if you want it
+# synced/backed up elsewhere.
+data/store.json
+vault/

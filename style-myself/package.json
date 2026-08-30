@@ -1,0 +1,15 @@
+{
+  "name": "style-myself",
+  "version": "1.0.0",
+  "description": "Take a selfie, drop in dress photos, and see how you'd look in them — right in the browser.",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}
