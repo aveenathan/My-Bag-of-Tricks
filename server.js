@@ -5,10 +5,15 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 
+const { loadEnvFile } = require('./src/loadEnv');
 const { searchVideos } = require('./src/youtubeClient');
 const { filterVideos } = require('./src/aiSlopFilter');
 const { readLists, writeLists, moveChannel } = require('./src/listsStore');
 const { SAMPLE_VIDEOS } = require('./src/sampleVideos');
+
+// Load .env before reading any process.env values below, so `npm start`
+// picks up YOUTUBE_API_KEY/PORT from .env with no extra flags or setup.
+loadEnvFile(path.join(__dirname, '.env'));
 
 const PORT = process.env.PORT || 3000;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
