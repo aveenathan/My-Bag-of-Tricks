@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.log
+
+# Your tasks/notes — local runtime data, not something to commit.
+data/store.json
